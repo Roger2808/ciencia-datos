@@ -1,0 +1,85 @@
+---
+title: "clase_6_8_26"
+format: 
+  html:
+  code-fold:true
+  toc:true
+editor: visual
+jupyter: python3
+---
+
+```{r}
+library(tidyverse)
+library(naniar)
+library(VIM)
+library(mice)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+
+```
+
+```{python}
+#| label: setup-python
+#| echo: true
+
+#Cargar bibliotecas
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.impute import SimpleImputer, KNNImputer
+from sklearn.preprocessing import StandardScaler
+import missingno as msno
+import warnings
+
+```
+
+You can add options to executable code like this
+
+```{r}
+
+set.seed(123)
+n <- 1000
+
+datos_r <- data.frame(
+  id = 1:n,
+  edad = round(rnorm(n, mean = 35, sd = 12)),
+  ingreso = round(rnorm(n,mean = 5000, sd = 15000)),
+  educacion = sample(1:5, n, replace = TRUE, prob = c(0.1, 0.2, 0.3, 0.25, 0.25)),
+  experiencia = round(rnorm(n, mean = 10, sd = 7)),
+  satisfaccion = round(runif(n, min = 1, max = 10))
+)
+
+#Introducir valores faltantes (MCAR)
+indices_na <- sample(1:n, size = 50)
+datos_r$edad[indices_na] = NA
+
+#Introducir valores atípicos
+indices_outliers <- sample(1:n, size=20)
+datos_r$ingreso[indices:outliers] <- datos_r$ingreso[indices_outliers] * 5
+
+#Introducir valores faltantes condicionales
+
+indices_mar <- sample(which(datos_r$educacion >= 4), size = 30)
+datos_r$satisfaccion[indices_mar] = NA
+
+head(datos_r)
+```
+
+```{python}
+np.random.seed(123)
+n = 1000
+
+datos_python <- pd.DataFrame({
+    'id' = range(1, n+1),
+  'edad' = np.round(np.random.normal(35, 12, n)).astype(int),
+  ingreso = round(rnorm(n,mean = 5000, sd = 15000)),
+  educacion = sample(1:5, n, replace = TRUE, prob = c(0.1, 0.2, 0.3, 0.25, 0.25)),
+  experiencia = round(rnorm(n, mean = 10, sd = 7)),
+  satisfaccion = round(runif(n, min = 1, max = 10))
+  
+})
+
+```
