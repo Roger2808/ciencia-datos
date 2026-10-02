@@ -1,0 +1,395 @@
+---
+title: "Distribución de frecuencias – Dataset Auto (ISLR2)"
+subtitle: "Variable analizada: horsepower"
+author: "Roger Monterroso"
+date: today
+lang: es
+format:
+  html:
+    toc: true
+    toc-title: "Contenido"
+    code-fold: true
+    code-summary: "Ver código"
+    embed-resources: true
+    theme: cosmo
+execute:
+  warning: false
+  message: false
+---
+
+**Objetivo:** construir e interpretar tablas de distribución de frecuencias para datos agrupados por intervalos de clase, utilizando el dataset `Auto` de ISLR2.
+
+```{r}
+#| label: setup
+# install.packages(c("ISLR2", "dplyr", "tidyr", "ggplot2", "knitr"))  # solo la primera vez
+library(ISLR2)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+
+options(knitr.kable.NA = "")
+theme_set(theme_minimal(base_size = 12))
+
+data("Auto")
+```
+
+# Reconocimiento del dataset
+
+| Variable | Tipo | Descripción | Unidad |
+|---|---|---|---|
+| mpg | Cuantitativa continua | Rendimiento de combustible | millas/galón |
+| cylinders | Cualitativa ordinal | Número de cilindros | – |
+| displacement | Cuantitativa continua | Cilindrada del motor | pulg³ |
+| horsepower | Cuantitativa continua | Potencia | hp |
+| weight | Cuantitativa continua | Peso del vehículo | lb |
+| acceleration | Cuantitativa continua | Aceleración 0-60 mph | s |
+| year | Cualitativa ordinal (temporal) | Año del modelo | año |
+| origin | Cualitativa nominal | País de origen (1 = USA, 2 = Europa, 3 = Japón) | – |
+| name | Cualitativa nominal | Nombre del auto | – |
+
+## Preguntas de exploración inicial
+
+```{r}
+#| label: exploracion
+dim(Auto)
+names(Auto)[sapply(Auto, is.numeric)]
+colSums(is.na(Auto))
+```
+
+| Pregunta | Respuesta |
+|---|---|
+| ¿Cuántas filas y columnas tiene el dataset? | 392 filas y 9 columnas. |
+| ¿Qué variables numéricas contiene? | mpg, cylinders, displacement, horsepower, weight, acceleration, year y origin (esta última está codificada como número pero es cualitativa nominal; cylinders y year son conceptualmente ordinales). `name` es un factor. |
+| ¿Existen valores nulos? ¿En qué columnas? | No hay valores nulos en ninguna columna (la versión de ISLR2 ya eliminó las 6 filas con `horsepower` faltante que sí aparecen en la versión de Seaborn). |
+| ¿Cuál es la variable que analizaremos? | **horsepower** (potencia en hp). |
+
+```{r}
+#| label: preparacion
+# Origen como factor y año completo
+Auto <- Auto |>
+  mutate(
+    origin = factor(origin, levels = 1:3, labels = c("USA", "Europa", "Japón")),
+    cyl    = factor(cylinders),
+    anio   = 1900 + year
+  )
+```
+
+# Paso 1: Selección de la variable
+
+- [ ] mpg
+- [x] **horsepower**
+- [ ] weight
+- [ ] displacement
+
+**Variable elegida: horsepower**
+
+```{r}
+x <- Auto$horsepower
+```
+
+# Paso 2: Medidas descriptivas previas
+
+```{r}
+#| label: medidas
+n <- length(x)
+medidas <- tibble(
+  Medida = c("n (tamaño de muestra)", "Mínimo", "Máximo", "Rango (R)",
+             "Media (x̄)", "Mediana", "Desviación estándar (s)", "Coeficiente de variación (CV %)"),
+  Valor  = c(n, min(x), max(x), diff(range(x)),
+             round(mean(x), 2), median(x), round(sd(x), 2), round(sd(x) / mean(x) * 100, 2))
+)
+kable(medidas, align = "lr")
+```
+
+**Interpretación:** el auto menos potente del dataset tiene 46 hp y el más potente 230 hp, un rango de 184 hp, lo que muestra una gran diversidad de motores (desde compactos económicos hasta autos deportivos de motor V8). En promedio un auto tiene aproximadamente 104.5 hp, pero la mediana es menor (93.5 hp): la mitad de los autos tiene menos de 93.5 hp. Que la media sea mayor que la mediana indica que unos pocos autos muy potentes "jalan" el promedio hacia arriba (sesgo a la derecha). El coeficiente de variación de aproximadamente 36.8 % señala una dispersión alta (se suele considerar heterogéneo un conjunto con CV superior a ~30 %), por lo que la media por sí sola no describe bien al auto típico.
+
+# Tabla de distribución de frecuencias
+
+Se usa la regla de Sturges: $k = 1 + 3.322 \log_{10}(n)$, con amplitud $A = R / k$ redondeada hacia arriba.
+
+```{r}
+#| label: tabla-frecuencias
+k <- ceiling(1 + 3.322 * log10(n))
+R <- diff(range(x))
+A <- ceiling(R / k)
+breaks <- min(x) + A * (0:k)
+
+cat("k =", k, "| R =", R, "| Amplitud A =", A, "\n")
+
+fi <- as.vector(table(cut(x, breaks = breaks, right = FALSE, include.lowest = TRUE)))
+
+tabla <- tibble(
+  Intervalo = paste0("[", head(breaks, -1), " – ", tail(breaks, -1), ")"),
+  `Marca de clase (xi)` = (head(breaks, -1) + tail(breaks, -1)) / 2,
+  fi = fi,
+  fr = round(fi / n, 4),
+  `fr %` = round(fi / n * 100, 2),
+  Fa = cumsum(fi),
+  `Fa %` = round(cumsum(fi) / n * 100, 2)
+)
+
+total <- tibble(Intervalo = "Total", fi = sum(fi), fr = 1, `fr %` = 100)
+kable(bind_rows(tabla, total), align = "lrrrrrr")
+```
+
+# Paso 3: Visualización
+
+## Histograma
+
+```{r}
+#| label: histograma
+ggplot(data.frame(x = x), aes(x = x)) +
+  geom_histogram(breaks = breaks, closed = "left", fill = "steelblue", colour = "black") +
+  scale_x_continuous(breaks = breaks) +
+  labs(title = "Distribución de la potencia de los autos (horsepower)",
+       x = "Potencia (hp)", y = "Frecuencia absoluta (número de autos)")
+```
+
+## Ojiva (gráfico de líneas del porcentaje acumulado)
+
+```{r}
+#| label: ojiva
+oj <- tibble(limite = breaks, Fa_pct = c(0, tabla$`Fa %`))
+
+ggplot(oj, aes(x = limite, y = Fa_pct)) +
+  geom_line(colour = "darkred", linewidth = 1) +
+  geom_point(colour = "darkred", size = 2) +
+  scale_x_continuous(breaks = breaks) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
+  labs(title = "Ojiva: porcentaje acumulado de la potencia (horsepower)",
+       x = "Potencia (hp)", y = "Frecuencia acumulada (%)")
+```
+
+## Análisis de la forma de la distribución
+
+```{r}
+#| label: forma
+asimetria <- mean((x - mean(x))^3) / (mean((x - mean(x))^2))^1.5
+Q <- quantile(x, c(.25, .75))
+IQR_x <- Q[2] - Q[1]
+lim_sup <- Q[2] + 1.5 * IQR_x
+atipicos <- x[x > lim_sup]
+
+cat("Asimetría:", round(asimetria, 2), "\n")
+cat("Q1 =", Q[1], "| Q3 =", Q[2], "| Límite superior (1.5·IQR) =", lim_sup, "\n")
+cat("Atípicos (", length(atipicos), "):", sort(atipicos), "\n")
+
+ggplot(data.frame(x = x), aes(x = x)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Diagrama de caja de la potencia (horsepower)", x = "Potencia (hp)", y = NULL) +
+  theme(axis.text.y = element_blank())
+```
+
+- **¿Es simétrica o sesgada?** Sesgada a la derecha (asimetría ≈ 1.08; media > mediana).
+- **¿Hacia qué lado se concentra la mayor frecuencia?** Hacia los valores bajos: el intervalo modal es [84 – 103) con 117 autos (29.8 %), seguido de [65 – 84) con 99 autos.
+- **¿Hay valores atípicos visibles?** Sí. El límite superior por IQR es 202.5 hp (Q1 = 75, Q3 = 126) y hay 10 autos por encima (de 208 a 230 hp). No hay atípicos inferiores.
+
+# Paso 4: Interpretación de resultados
+
+**Contexto de la variable.** La variable `horsepower` mide la potencia del motor del vehículo en caballos de fuerza (hp). Se analizaron los 392 autos del dataset `Auto`, que corresponden a modelos de los años 1970 a 1982.
+
+**Tendencia central.** La media es de 104.5 hp y la mediana de 93.5 hp. No son iguales: la media es mayor porque la distribución tiene una cola larga hacia la derecha, es decir, unos pocos autos de potencia muy alta elevan el promedio, mientras que la mediana es más robusta frente a esos valores extremos. Por eso, para describir al auto típico es más representativa la mediana.
+
+**Dispersión.** La desviación estándar es de 38.5 hp y el coeficiente de variación de 36.8 %, lo que indica una variabilidad relativa alta: el conjunto de autos es heterogéneo, con motores pequeños de 4 cilindros y motores V8 mucho más potentes conviviendo en el mismo dataset.
+
+**Distribución de frecuencias.** El intervalo que concentra más observaciones es [84 – 103), con 117 autos, lo que representa el 29.8 % del total. Los autos con menos de 103 hp reúnen más de la mitad de la muestra, y a partir de 141 hp las frecuencias son pequeñas.
+
+**Acumulados.** El valor de la frecuencia acumulada (Fa) en el tercer intervalo es 243, es decir, 243 autos (62 %) tienen una potencia menor a 103 hp.
+
+**Conclusión general.** La mayoría de los vehículos del dataset son de potencia baja a moderada (menos de unos 125 hp), mientras que una minoría de autos muy potentes genera el sesgo positivo y los valores atípicos. Esto es coherente con la época y con la mezcla de cilindradas de los vehículos, y muestra que el promedio por sí solo no es suficiente para resumir la variable.
+
+# Paso 5: Preguntas de reflexión
+
+**¿Qué información aporta la ojiva que no aporta el histograma?**
+La ojiva permite leer directamente proporciones y percentiles acumulados (por ejemplo, qué porcentaje de autos tiene menos de cierta potencia, o por debajo de qué valor se encuentra el 50 % o el 80 % de los autos), mientras que el histograma solo muestra la frecuencia de cada intervalo y esa lectura acumulada es apenas aproximada.
+
+**Si tuviera que comparar 4 vs 8 cilindros, ¿cómo usaría las tablas de frecuencia?**
+Construiría una tabla de frecuencias para cada grupo usando los mismos intervalos de clase, y compararía las frecuencias relativas (%) y no las absolutas, porque los grupos tienen tamaños distintos (199 autos de 4 cilindros frente a 103 de 8 cilindros). También compararía las frecuencias acumuladas para ver en qué intervalo cada grupo alcanza, por ejemplo, el 50 % de sus observaciones.
+
+# Paso 6: Análisis comparativo
+
+## Pregunta 1: ¿Existen diferencias en el rendimiento (mpg) según el número de cilindros?
+
+**Tipo de análisis:** comparación entre grupos.
+
+```{r}
+#| label: p1
+ggplot(Auto, aes(x = cyl, y = mpg)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.6) +
+  labs(title = "Rendimiento de combustible según el número de cilindros",
+       x = "Número de cilindros", y = "Rendimiento (millas/galón)")
+
+Auto |>
+  group_by(Cilindros = cylinders) |>
+  summarise(n = n(), Media = round(mean(mpg), 2), Mediana = median(mpg),
+            `Desv. est.` = round(sd(mpg), 2), `CV %` = round(sd(mpg) / mean(mpg) * 100, 1)) |>
+  kable()
+```
+
+**Preguntas de interpretación:**
+
+- **¿Cómo varía la mediana de mpg al aumentar los cilindros?** Entre 4, 6 y 8 cilindros el mpg baja claramente: las medianas son 28.4 (4 cilindros), 19.0 (6 cilindros) y 14.0 (8 cilindros). Los grupos de 3 y 5 cilindros tienen solo 4 y 3 autos, por lo que no son confiables.
+- **¿Qué grupo presenta mayor dispersión? ¿A qué podría deberse?** Entre los grupos grandes, el de 4 cilindros (s = 5.7 mpg) frente a 6 cilindros (s = 3.8) y 8 cilindros (s = 2.8). Puede deberse a que es el grupo más numeroso y mezcla autos muy distintos en año, origen y peso. (El grupo de 5 cilindros tiene s = 8.2, pero solo 3 autos.)
+- **¿Hay solapamiento entre las cajas? ¿Qué implica estadísticamente?** Casi no hay solapamiento entre 4 y 8 cilindros, y es leve entre 4-6 y 6-8. Implica que la diferencia entre las medias probablemente es estadísticamente significativa.
+- **Hipótesis para ANOVA:** H0: μ4 = μ6 = μ8 (el mpg medio es igual en todos los grupos de cilindros); H1: al menos un grupo tiene un mpg medio distinto.
+
+**Interpretación técnica:** el rendimiento de combustible disminuye de forma sistemática al aumentar el número de cilindros: los autos de 4 cilindros rinden en promedio 29.3 mpg, los de 6 cilindros 20.0 mpg y los de 8 cilindros 15.0 mpg. Las cajas de 4 y 8 cilindros casi no se solapan, lo que sugiere diferencias reales y no producto del azar. La dispersión es mayor en el grupo de 4 cilindros, probablemente por su heterogeneidad, y los grupos de 3 y 5 cilindros tienen muy pocos datos, por lo que deben interpretarse con cautela.
+
+## Pregunta 2: ¿Existen diferencias significativas en el rendimiento según el país de origen?
+
+**Tipo de análisis:** comparación entre grupos.
+
+```{r}
+#| label: p2
+ggplot(Auto, aes(x = origin, y = mpg, fill = origin)) +
+  geom_boxplot(alpha = 0.7, show.legend = FALSE) +
+  labs(title = "Rendimiento de combustible según el país de origen",
+       x = "País de origen", y = "Rendimiento (millas/galón)")
+
+ggplot(Auto, aes(x = mpg, fill = origin)) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribución del rendimiento de combustible por país de origen",
+       x = "Rendimiento (millas/galón)", y = "Densidad", fill = "Origen")
+
+Auto |>
+  group_by(Origen = origin) |>
+  summarise(n = n(), Media = round(mean(mpg), 2), Mediana = median(mpg),
+            `Desv. est.` = round(sd(mpg), 2)) |>
+  kable()
+
+# Prueba de Levene (versión Brown-Forsythe, centrada en la mediana)
+Auto$desv_abs <- abs(Auto$mpg - ave(Auto$mpg, Auto$origin, FUN = median))
+cat("Levene: p =", anova(lm(desv_abs ~ origin, data = Auto))$`Pr(>F)`[1], "\n")
+
+# ANOVA
+summary(aov(mpg ~ origin, data = Auto))
+```
+
+**Preguntas de interpretación:**
+
+- **¿Qué origen tiene mejor rendimiento promedio? ¿Y peor?** El mejor es Japón (30.5 mpg) y el peor USA (20.0 mpg); Europa queda en medio (27.6 mpg).
+- **¿La forma de las distribuciones es similar entre orígenes?** No del todo: USA concentra la mayor frecuencia en valores bajos y presenta cola hacia la derecha, mientras que Japón y Europa se concentran en valores medios-altos.
+- **¿Los datos sugieren igualdad de varianzas entre grupos?** Sí. Las desviaciones estándar son similares (Europa 6.6, Japón 6.1, USA 6.4) y la prueba de Levene da p ≈ 0.92, por lo que no se rechaza la igualdad de varianzas.
+- **¿Qué otros factores podrían confundir la comparación?** El número de cilindros, el peso, la potencia y el año del modelo: los autos de USA son más pesados y con más cilindros, por lo que la diferencia en mpg no se debe necesariamente al origen en sí.
+
+**Interpretación técnica:** existen diferencias claras en el rendimiento según el país de origen: Japón (30.5 mpg) y Europa (27.6 mpg) superan ampliamente a USA (20.0 mpg). El ANOVA arroja un p-valor prácticamente cero (≈ 1e-34), por lo que se rechaza la igualdad de medias. Las varianzas son similares entre grupos (Levene p ≈ 0.92), lo que respalda el supuesto de homocedasticidad. Sin embargo, la comparación puede estar confundida por variables como cilindros, peso y año, de modo que el origen no explica por sí solo la diferencia.
+
+## Pregunta 3: ¿Cómo interactúan el origen y el número de cilindros sobre el rendimiento?
+
+**Tipo de análisis:** comparación multivariada categórica.
+
+```{r}
+#| label: p3
+Auto_c <- Auto |> filter(cylinders %in% c(4, 6, 8))
+
+ggplot(Auto_c, aes(x = cyl, y = mpg, fill = origin)) +
+  geom_boxplot(position = position_dodge2(preserve = "single"), alpha = 0.8) +
+  labs(title = "Rendimiento de combustible según cilindros y país de origen",
+       x = "Número de cilindros", y = "Rendimiento (millas/galón)", fill = "Origen")
+
+Auto_c |>
+  group_by(Cilindros = cylinders, Origen = origin) |>
+  summarise(n = n(), `mpg medio` = round(mean(mpg), 1), .groups = "drop") |>
+  kable()
+```
+
+**Preguntas de interpretación:**
+
+- **¿El efecto de los cilindros sobre mpg es constante entre orígenes?** En general sí: en todos los orígenes el mpg baja al pasar de 4 a 6 cilindros (4 cilindros: Europa 28.1, Japón 31.6, USA 28.0; 6 cilindros: Europa 20.1, Japón 23.9, USA 19.6). Hay diferencias de nivel, con Japón siempre algo por encima.
+- **¿Algún origen tiene un comportamiento diferenciado?** USA es el único origen con autos de 8 cilindros (mpg medio 15.0) y concentra casi todos los de 6 cilindros (73 de 83). Japón y Europa son casi exclusivamente de 4 cilindros.
+- **¿Qué ventajas tiene este gráfico respecto a los anteriores?** Permite ver dos factores a la vez (cilindros y origen), separa el efecto de cada uno y deja ver el desbalance entre grupos (combinaciones sin datos, como 8 cilindros en Europa o Japón).
+
+**Interpretación técnica:** el efecto negativo de los cilindros sobre el rendimiento se mantiene en los tres orígenes, lo que sugiere que no hay una interacción fuerte: el patrón decreciente es el mismo y solo cambia el nivel. Aun así, la comparación tiene limitaciones por el desbalance de datos: no existen autos de 8 cilindros japoneses ni europeos y los de 6 cilindros en esos orígenes son muy pocos (6 y 4 autos). Por tanto, parte de la diferencia entre orígenes observada antes se debe a que USA fabrica autos más grandes, no necesariamente a que sean menos eficientes con el mismo motor.
+
+## Pregunta 4: ¿Cómo ha cambiado la composición de cilindros y orígenes por año?
+
+**Tipo de análisis:** composición por categorías en el tiempo.
+
+```{r}
+#| label: p4
+ggplot(Auto, aes(x = factor(anio), fill = origin)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Composición de los autos por país de origen y año del modelo",
+       x = "Año del modelo", y = "Porcentaje de autos", fill = "Origen")
+
+ggplot(Auto, aes(x = factor(anio), fill = cyl)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Composición de los autos por número de cilindros y año del modelo",
+       x = "Año del modelo", y = "Porcentaje de autos", fill = "Cilindros")
+
+Auto |>
+  group_by(anio) |>
+  summarise(mpg_medio = mean(mpg)) |>
+  ggplot(aes(x = anio, y = mpg_medio)) +
+  geom_line(colour = "darkgreen", linewidth = 1) +
+  geom_point(colour = "darkgreen", size = 2) +
+  labs(title = "Rendimiento promedio de combustible por año del modelo",
+       x = "Año del modelo", y = "mpg promedio (millas/galón)")
+```
+
+**Preguntas de interpretación:**
+
+- **¿Cómo ha evolucionado la participación de cada origen por año?** USA domina siempre pero baja de 76 % (1970) a 63 % (1982). Japón sube de 7 % a 30 % y Europa baja de 17 % a 7 %.
+- **¿Disminuyó la presencia de vehículos con 8 cilindros?** Sí, de forma muy marcada: pasó de aproximadamente 62 % en 1970 a 0 % en 1982, mientras que los de 4 cilindros subieron de 24 % a 90 %.
+- **¿Qué relación encuentras entre este gráfico y la tendencia de mpg?** Al aumentar los autos de 4 cilindros y desaparecer los V8, el mpg promedio sube de aproximadamente 17.7 (1970) a 32.0 (1982). Es consistente con la tendencia ascendente del rendimiento, aunque se trata de una asociación y no prueba causalidad por sí sola.
+
+**Interpretación técnica:** la composición del parque de autos cambió notablemente entre 1970 y 1982: los vehículos de 8 cilindros desaparecieron y los de 4 cilindros pasaron a ser la gran mayoría, a la vez que creció la participación de Japón y cayó la de Europa y, en menor medida, la de USA. Este cambio estructural coincide con el aumento del rendimiento promedio de combustible en el periodo, lo que sugiere que la transición hacia motores más pequeños fue un factor importante en la mejora de la eficiencia, posiblemente impulsada por el contexto de alza de precios del petróleo.
+
+# Paso 7: Diseño de mi propio análisis
+
+**Pregunta de análisis propuesta:** ¿cómo ha cambiado la potencia promedio (horsepower) de los autos por país de origen a lo largo de los años?
+
+**Variables involucradas:**
+
+- Eje X: año del modelo (`anio`)
+- Eje Y: potencia promedio (`horsepower`, en hp)
+- Color/grupo: país de origen (`origin`)
+
+**Tipo de gráfico y justificación:** gráfico de líneas con marcadores, porque muestra la tendencia de una variable en el tiempo y el color permite comparar varios grupos (orígenes) en el mismo gráfico. Un gráfico de barras por año y origen sería más difícil de leer por la cantidad de barras.
+
+```{r}
+#| label: paso7
+Auto |>
+  group_by(anio, origin) |>
+  summarise(hp_medio = mean(horsepower), .groups = "drop") |>
+  ggplot(aes(x = anio, y = hp_medio, colour = origin)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(title = "Potencia promedio de los autos por país de origen y año del modelo",
+       x = "Año del modelo", y = "Potencia promedio (hp)", colour = "Origen")
+
+cor(Auto$horsepower, Auto$mpg)
+```
+
+**Interpretación técnica:** la potencia promedio de los autos disminuye con los años: de aproximadamente 148 hp en 1970 a 82 hp en 1982. USA parte de un nivel muy superior (aprox. 167 hp en 1970) y cae a aprox. 87 hp en 1982, una reducción de casi la mitad. Europa (86 a 63 hp) y Japón (92 a 74 hp) bajan menos porque ya partían de motores pequeños, por lo que la brecha entre USA y el resto se reduce con el tiempo. Esta caída coincide con la desaparición de los motores V8 y el aumento de los de 4 cilindros observados en el análisis anterior, y con el aumento del mpg promedio (la correlación entre horsepower y mpg es de aproximadamente −0.78). Una explicación plausible es el contexto de la crisis del petróleo de los años 70 y la presión por mayor eficiencia de combustible. Como limitación, se trata de un análisis observacional, hay pocos autos por combinación año-origen en Europa y Japón y los promedios pueden verse afectados por valores atípicos.
+
+# Matriz de autoevaluación de los gráficos
+
+```{r}
+#| label: autoevaluacion
+autoeval <- tibble(
+  Criterio = c(
+    "El título describe qué se muestra (no solo \"Gráfico de mpg\")",
+    "Los ejes tienen etiquetas con unidades",
+    "La escala del eje Y comienza en cero (cuando aplica)",
+    "El uso del color es informativo, no decorativo",
+    "Se incluye leyenda cuando hay múltiples grupos",
+    "No hay \"chartjunk\" (elementos innecesarios)",
+    "El tipo de gráfico corresponde a la naturaleza de las variables"
+  ),
+  `✔ / ✘` = c("✔", "✔", "✔", "✔", "✔", "✔", "✔"),
+  Comentario = c(
+    "Todos los títulos indican variable, agrupación y contexto (p. ej. \"Rendimiento de combustible según cilindros y país de origen\").",
+    "Se indican unidades: hp, millas/galón, año del modelo y porcentaje.",
+    "Se cumple en histograma, ojiva y barras de composición (0-100 %). En boxplots y líneas de tendencia no es obligatorio, porque se busca comparar posición y variación.",
+    "El color solo se usa para identificar grupos con significado (origen, cilindros); en gráficos de una sola variable se usa un color único.",
+    "Los gráficos con varios grupos (origen, cilindros) incluyen leyenda con título; en los boxplots con eje X por grupo se omitió porque sería redundante.",
+    "Se usó un tema minimalista, sin 3D, sin sombras ni adornos innecesarios.",
+    "Histograma y ojiva para una variable continua; boxplots para continua por categórica; barras apiladas al 100 % para composición; líneas para tendencia temporal."
+  )
+)
+kable(autoeval, align = "lcl")
+```
