@@ -1,0 +1,397 @@
+---
+title: "Análisis Descriptivo y Diagnóstico de Ventas de Videojuegos"
+author: "Roger Monterroso"
+date: today
+lang: es
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    fig-width: 7
+    fig-height: 4
+  html:
+    toc: true
+    embed-resources: true
+jupyter: python3
+execute:
+  echo: false
+  warning: false
+---
+
+# Introducción
+
+Este informe aplica un ciclo completo de análisis de datos (importación, limpieza, análisis descriptivo y diagnóstico) sobre el dataset `vgsales.csv`, con el fin de generar conclusiones útiles para la toma de decisiones. Las ventas están expresadas en **millones de unidades**.
+
+# Parte A: Carga y exploración inicial
+
+## A.1 Paquetes y carga del dataset
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+from IPython.display import display
+
+sns.set_theme(style="whitegrid")
+df = pd.read_csv("vgsales.csv")
+```
+
+## A.2 Preguntas de exploración
+
+```{python}
+print("Dimensiones (filas, columnas):", df.shape)
+print("\nTipos de datos:")
+print(df.dtypes)
+print("\nValores nulos por columna:")
+print(df.isna().sum())
+```
+
+**Respuestas:**
+
+1. **Dimensiones:** el dataset tiene `{python} df.shape[0]` filas y `{python} df.shape[1]` columnas.
+2. **Tipos de datos:** `Name`, `Platform`, `Genre` y `Publisher` son texto (*object*); `Year` es numérico decimal (*float*) debido a los nulos; `Rank` es entero y las columnas de ventas son decimales (*float*).
+3. **Significado de las columnas:**
+    - `Rank`: posición del juego según ventas globales.
+    - `Name`: nombre del juego.
+    - `Platform`: plataforma de lanzamiento (PS2, X360, Wii, etc.).
+    - `Year`: año de lanzamiento.
+    - `Genre`: género del juego.
+    - `Publisher`: empresa que lo publica.
+    - `NA_Sales`, `EU_Sales`, `JP_Sales`, `Other_Sales`: ventas en Norteamérica, Europa, Japón y resto del mundo.
+    - `Global_Sales`: ventas totales mundiales.
+4. **Valores nulos:** existen nulos en `Year` (`{python} int(df["Year"].isna().sum())`) y en `Publisher` (`{python} int(df["Publisher"].isna().sum())`). Las demás columnas están completas.
+
+## A.3 Primeras filas y estadísticas descriptivas
+
+```{python}
+display(df.head(10))
+display(df.describe().round(2))
+```
+
+# Parte B: Limpieza de datos
+
+## B.1 Transformaciones
+
+```{python}
+n_inicial = len(df)
+
+# 1. Eliminar filas con Year nulo
+df = df.dropna(subset=["Year"])
+
+# 2. Reemplazar nulos de Publisher por "Unknown"
+df["Publisher"] = df["Publisher"].fillna("Unknown")
+
+# 3. Convertir Year a entero
+df["Year"] = df["Year"].astype(int)
+
+# 4. Eliminar duplicados
+n_antes_dup = len(df)
+df = df.drop_duplicates()
+n_dup = n_antes_dup - len(df)
+
+# 5. Verificar que no queden nulos
+print(f"Filas iniciales: {n_inicial}")
+print(f"Filas tras eliminar Year nulo: {n_antes_dup}")
+print(f"Duplicados eliminados: {n_dup}")
+print(f"Filas finales: {len(df)}")
+print("\nNulos restantes por columna:")
+print(df.isna().sum())
+print("\nTipo de Year:", df["Year"].dtype)
+```
+
+Pasos documentados: (1) se eliminaron las filas sin año, (2) los publishers nulos se etiquetaron como "Unknown", (3) `Year` se convirtió a entero, (4) se eliminaron duplicados y (5) se verificó que no quedaran nulos.
+
+## B.2 Reflexión sobre la limpieza
+
+- **¿Por qué limpiar antes de analizar?** Porque los datos nulos, duplicados o mal tipados distorsionan sumas, promedios y gráficos, y pueden hacer fallar los cálculos (por ejemplo, no se puede agrupar por año si hay nulos).
+- **Decisiones sobre nulos:** se eliminaron las filas sin `Year` porque sin año no se pueden ubicar en el análisis temporal y son una fracción pequeña del total. En `Publisher` se usó "Unknown" para conservar las ventas de esos juegos en los totales por género, región y plataforma, sin inventar un publisher.
+- **Impacto de no limpiar:** ventas infladas por duplicados, series temporales incompletas y rankings de publishers sesgados, lo que llevaría a conclusiones erróneas.
+- **Pregunta de reflexión:** si fueran ventas reales de una empresa, decidir con datos sucios implicaría riesgos como invertir en géneros o plataformas que parecen rentables por registros duplicados, subestimar o sobrestimar ingresos, errores en presupuestos y pronósticos, y pérdida de credibilidad ante la gerencia o los inversionistas.
+
+# Parte C: Análisis descriptivo
+
+## C.1 Ventas globales por género
+
+```{python}
+genre_sales = df.groupby("Genre")["Global_Sales"].sum().sort_values(ascending=False)
+display(genre_sales.round(2).to_frame("Ventas globales (M)"))
+```
+
+## C.2 Tendencia anual de ventas globales
+
+```{python}
+year_sales = df.groupby("Year")["Global_Sales"].sum()
+display(year_sales.round(2).to_frame("Ventas globales (M)").T)
+```
+
+## C.3 Ventas totales por región
+
+```{python}
+region_sales = df[["NA_Sales", "EU_Sales", "JP_Sales", "Other_Sales"]].sum()
+region_sales.index = ["NA", "EU", "JP", "Other"]
+display(region_sales.round(2).to_frame("Ventas (M)"))
+```
+
+## C.4 Top 10 publishers
+
+```{python}
+top_pub = df.groupby("Publisher")["Global_Sales"].sum().sort_values(ascending=False).head(10)
+display(top_pub.round(2).to_frame("Ventas globales (M)"))
+```
+
+## C.5 Visualizaciones
+
+```{python}
+#| label: fig-genero
+fig, ax = plt.subplots()
+sns.barplot(x=genre_sales.index, y=genre_sales.values, color="steelblue", ax=ax)
+ax.set_title("Ventas globales por género")
+ax.set_xlabel("Género")
+ax.set_ylabel("Ventas globales (millones)")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-tendencia
+fig, ax = plt.subplots()
+ax.plot(year_sales.index, year_sales.values, marker="o", color="darkgreen", label="Ventas globales")
+ax.set_title("Tendencia anual de ventas globales")
+ax.set_xlabel("Año")
+ax.set_ylabel("Ventas globales (millones)")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-region
+fig, ax = plt.subplots()
+ax.pie(region_sales.values, labels=region_sales.index, autopct="%1.1f%%",
+       startangle=90, colors=sns.color_palette("pastel"))
+ax.set_title("Participación de ventas por región")
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-publishers
+fig, ax = plt.subplots()
+sns.barplot(x=top_pub.values, y=top_pub.index, color="indianred", ax=ax)
+ax.set_title("Top 10 publishers por ventas globales")
+ax.set_xlabel("Ventas globales (millones)")
+ax.set_ylabel("Publisher")
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+# Variables para la interpretación
+top_genre = genre_sales.index[0]
+peak_year = int(year_sales.idxmax())
+peak_value = year_sales.max()
+top_region = region_sales.idxmax()
+top_region_pct = region_sales.max() / region_sales.sum() * 100
+top_publisher = top_pub.index[0]
+```
+
+## C.6 Interpretación
+
+1. **Género más vendido:** `{python} top_genre`. Es un género de ritmo rápido, accesible para públicos amplios y con una oferta muy numerosa de títulos y franquicias, lo que acumula muchas ventas.
+2. **Pico de ventas:** el máximo se alcanzó en `{python} peak_year` (`{python} round(peak_value, 1)` millones). Pudo influir el auge de consolas como Wii, Xbox 360 y PS3, el crecimiento del público casual y la madurez del mercado antes de la llegada de la distribución digital y los juegos móviles. Los años recientes del dataset aparecen con menos ventas también porque los datos están incompletos.
+3. **Región dominante:** `{python} top_region`, con `{python} round(top_region_pct, 1)`% de las ventas totales.
+4. **Publisher dominante:** `{python} top_publisher`, líder en ventas globales gracias a su catálogo de franquicias propias y su control del hardware.
+
+# Parte D: Análisis diagnóstico
+
+## D.1 Distribución regional por género
+
+```{python}
+reg_genre = df.groupby("Genre")[["NA_Sales", "EU_Sales", "JP_Sales", "Other_Sales"]].sum()
+reg_genre.columns = ["NA", "EU", "JP", "Other"]
+reg_genre_pct = reg_genre.div(reg_genre.sum(axis=1), axis=0)
+
+fig, ax = plt.subplots(figsize=(7, 5))
+sns.heatmap(reg_genre_pct, annot=True, fmt=".0%", cmap="YlGnBu", ax=ax,
+            cbar_kws={"label": "Proporción de ventas del género"})
+ax.set_title("Proporción regional de ventas por género")
+ax.set_xlabel("Región")
+ax.set_ylabel("Género")
+plt.tight_layout()
+plt.show()
+
+jp_genre = reg_genre_pct["JP"].idxmax()
+```
+
+**Pregunta D.1:** el género con proporción inusualmente alta en Japón es **`{python} jp_genre`**. Culturalmente, los JRPG (Final Fantasy, Dragon Quest, Pokémon) son parte central de la industria japonesa, con narrativa de personajes y estética anime muy valorados. Además, el mercado japonés favorece juegos portátiles (Game Boy, DS, 3DS) con sesiones largas en trayecto, y prefiere menos los shooters y los deportes occidentales, muy fuertes en NA y EU.
+
+## D.2 Ciclo de vida de las plataformas
+
+```{python}
+top6 = df.groupby("Platform")["Global_Sales"].sum().nlargest(6).index
+plat_year = (df[df["Platform"].isin(top6)]
+             .groupby(["Year", "Platform"])["Global_Sales"].sum().reset_index())
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+sns.lineplot(data=plat_year, x="Year", y="Global_Sales", hue="Platform", marker="o", ax=ax)
+ax.set_title("Evolución anual de ventas de las 6 plataformas principales")
+ax.set_xlabel("Año")
+ax.set_ylabel("Ventas globales (millones)")
+ax.legend(title="Plataforma")
+plt.tight_layout()
+plt.show()
+
+print("Top 6 plataformas:", list(top6))
+```
+
+**Pregunta D.2:** cada plataforma sigue un ciclo claro: lanzamiento, crecimiento rápido, pico a mitad de su vida (3-5 años después) y declive cuando llega la siguiente generación. Las plataformas se solapan con sus sucesoras (por ejemplo, PS2 → PS3). Esto se relaciona con la estrategia de las empresas: los publishers concentran lanzamientos en la fase de mayor base instalada, las compañías de hardware lanzan sucesoras antes de que la actual se agote y los desarrolladores migran sus equipos y presupuestos a la nueva generación.
+
+## D.3 Concentración del mercado por publisher
+
+```{python}
+pub_sales = df.groupby("Publisher")["Global_Sales"].sum().sort_values(ascending=False)
+cum_share = pub_sales.cumsum() / pub_sales.sum() * 100
+
+conc = pd.DataFrame({
+    "Top N": [5, 10, 20],
+    "% del mercado": [cum_share.iloc[4], cum_share.iloc[9], cum_share.iloc[19]]
+}).round(1)
+display(conc)
+
+fig, ax = plt.subplots()
+ax.plot(range(1, len(cum_share) + 1), cum_share.values, color="purple", label="Cuota acumulada")
+ax.axhline(80, color="gray", linestyle="--", label="80 %")
+ax.set_xscale("log")
+ax.set_title("Cuota de mercado acumulada por publisher")
+ax.set_xlabel("Número de publishers (escala log)")
+ax.set_ylabel("Cuota acumulada (%)")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+**Pregunta D.3:** el mercado está **concentrado en la cima pero con una larga cola fragmentada**: unos pocos publishers (Top 5, 10 y 20, ver tabla) acumulan la mayor parte de las ventas, mientras cientos de publishers pequeños se reparten el resto. Para un nuevo publisher, competir de frente con los grandes es difícil por su catálogo, marketing y relación con las plataformas. Le conviene especializarse en un nicho (género o región desatendida), apoyarse en distribución digital o alianzas, y buscar rentabilidad con títulos de bajo costo.
+
+## D.4 Pregunta diagnóstica propia
+
+**Pregunta:** ¿Por qué parece decaer el género *Action* después de 2010?
+
+```{python}
+action_year = df[df["Genre"] == "Action"].groupby("Year")["Global_Sales"].sum()
+total_year = df.groupby("Year")["Global_Sales"].sum()
+action_share = (action_year / total_year * 100).dropna()
+n_games_year = df.groupby("Year").size()
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+axes[0].plot(action_year.index, action_year.values, marker="o", color="darkorange", label="Action")
+axes[0].plot(total_year.index, total_year.values, marker="o", color="gray", label="Total mercado")
+axes[0].set_title("Ventas anuales: Action vs. total")
+axes[0].set_xlabel("Año")
+axes[0].set_ylabel("Ventas (millones)")
+axes[0].legend()
+
+axes[1].plot(action_share.index, action_share.values, marker="o", color="teal", label="% Action")
+axes[1].set_title("Participación de Action en el mercado")
+axes[1].set_xlabel("Año")
+axes[1].set_ylabel("% de ventas anuales")
+axes[1].legend()
+plt.tight_layout()
+plt.show()
+
+print("Juegos registrados por año (2008-2016):")
+print(n_games_year.loc[2008:2016].to_string())
+```
+
+**Análisis y conclusiones:** al comparar Action con el total del mercado, se observa que su caída en ventas absolutas acompaña a la caída de **todo** el mercado después del pico, y su participación porcentual se mantiene relativamente estable. Además, el número de juegos registrados por año disminuye notablemente después de 2010-2012. Esto indica que el descenso no es propio del género sino de la **cobertura del dataset** (que subregistra la distribución digital, los juegos móviles y los años recientes) y del fin del ciclo de las consolas de la generación 2005-2012. Por lo tanto, no es correcto concluir que *Action* perdió popularidad.
+
+# Parte E: Interpretación administrativa
+
+## E.1 Informe ejecutivo
+
+**Para:** Gerencia de la empresa de videojuegos
+**Asunto:** Hallazgos del análisis de ventas históricas de videojuegos
+
+### Resumen ejecutivo
+
+Los tres hallazgos más importantes son:
+
+1. **Norteamérica concentra la mayor parte de las ventas**, seguida de Europa; Japón es un mercado más pequeño pero con preferencias muy distintas.
+2. **Los géneros Action, Sports y Shooter lideran en ventas globales**, mientras que Role-Playing destaca de forma desproporcionada en Japón.
+3. **El mercado está dominado por pocos publishers** con franquicias consolidadas, y las ventas siguen ciclos de vida marcados por las generaciones de consolas.
+
+### Análisis descriptivo
+
+Los datos muestran un crecimiento sostenido de las ventas desde mediados de los noventa hasta un pico entre 2008 y 2009, seguido de una caída. Los géneros más vendidos son los de acción y deportes, y los cinco publishers más grandes concentran una parte muy significativa de las ventas globales. Norteamérica representa aproximadamente la mitad del volumen total, Europa cerca de una cuarta parte, y Japón y el resto del mundo se reparten el resto.
+
+### Análisis diagnóstico
+
+El pico de ventas coincide con la madurez de las consolas de séptima generación (Wii, Xbox 360, PS3) y la expansión del público casual. La caída posterior se explica en parte por la transición a la distribución digital y a los juegos móviles, que este dataset no captura, y en parte por el registro incompleto de los últimos años. Las diferencias regionales responden a factores culturales: en Japón predominan los JRPG y los juegos portátiles, mientras que en Occidente dominan los shooters y los deportes. Las plataformas siguen un ciclo claro de lanzamiento, pico y declive, y la concentración de publishers refleja las ventajas de las franquicias establecidas y de poseer el hardware.
+
+### Recomendaciones
+
+1. **Segmentar la estrategia por región:** priorizar acción, deportes y shooters para Norteamérica y Europa, y reservar el desarrollo de RPG y títulos portátiles o narrativos para el mercado japonés.
+2. **Alinear los lanzamientos con el ciclo de vida de la plataforma:** concentrar los títulos principales entre el segundo y el cuarto año de la consola, cuando la base instalada crece más, y planificar la migración a la siguiente generación antes del declive.
+3. **Apostar por franquicias y alianzas:** invertir en propiedades intelectuales recurrentes (secuelas, universos compartidos) y, si la empresa es pequeña, buscar nichos específicos y alianzas con plataformas para reducir el riesgo frente a los grandes publishers.
+
+### Limitaciones
+
+Este dataset **no permite concluir** sobre ingresos monetarios ni rentabilidad (solo unidades vendidas), costos de desarrollo y marketing, ventas digitales, móviles ni microtransacciones, ni sobre años recientes (la cobertura se reduce después de 2016). Tampoco incluye calificaciones, reseñas o datos de los jugadores, por lo que no explica *por qué* un juego específico tuvo éxito. Los resultados describen el pasado y deben usarse como punto de partida y no como pronóstico.
+
+## E.2 Preguntas finales
+
+1. **Relación con la toma de decisiones:** este análisis permite decidir en qué géneros, regiones y plataformas invertir, cuándo lanzar productos y cómo posicionarse frente a la competencia. En una empresa real, estos hallazgos alimentan el presupuesto, el portafolio de juegos y la estrategia de marketing, siempre complementados con datos internos.
+2. **Otras fuentes de datos:** ventas digitales (Steam, PlayStation Store, Nintendo eShop), datos de móviles (App Store, Google Play), reseñas y puntuaciones (Metacritic), tendencias de búsqueda y redes sociales, costos de desarrollo y marketing, y datos demográficos de los jugadores.
+3. **Riesgos éticos:** sesgos por datos incompletos o desactualizados que lleven a ignorar mercados o grupos de jugadores; uso de datos personales de jugadores sin consentimiento si se enriquece el análisis; diseño de productos que fomenten la adicción o monetización abusiva (por ejemplo, cajas de botín) apoyado en patrones de consumo; y la reproducción de estereotipos al asumir preferencias fijas por región o género.
+
+# Extensión: Regresión lineal
+
+Se aplica una regresión lineal para predecir `Global_Sales` a partir de `Year`, `Genre` y `Platform`. No se usan las ventas regionales como predictores, porque su suma es prácticamente igual a la variable objetivo y generarían una predicción trivial.
+
+```{python}
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_squared_error
+
+X = pd.get_dummies(df[["Year", "Genre", "Platform"]], drop_first=True)
+y = df["Global_Sales"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+model = LinearRegression().fit(X_train, y_train)
+pred = model.predict(X_test)
+
+r2 = r2_score(y_test, pred)
+rmse = np.sqrt(mean_squared_error(y_test, pred))
+print(f"R² (prueba): {r2:.3f}")
+print(f"RMSE (prueba): {rmse:.3f} millones")
+
+coefs = pd.Series(model.coef_, index=X.columns).sort_values(key=abs, ascending=False).head(10)
+display(coefs.round(3).to_frame("Coeficiente"))
+
+fig, ax = plt.subplots()
+ax.scatter(y_test, pred, alpha=0.3, color="steelblue", label="Juegos")
+lim = [0, 10]
+ax.plot(lim, lim, color="red", linestyle="--", label="Predicción perfecta")
+ax.set_xlim(lim)
+ax.set_ylim(lim)
+ax.set_title("Ventas reales vs. predichas (conjunto de prueba)")
+ax.set_xlabel("Ventas reales (millones)")
+ax.set_ylabel("Ventas predichas (millones)")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+**Conclusiones de la extensión:** el modelo tiene un poder explicativo bajo (R² = `{python} round(r2, 3)`), lo que indica que el año, el género y la plataforma por sí solos explican una pequeña parte de las ventas de un juego. Esto es esperable: el éxito comercial depende sobre todo de factores no incluidos como la franquicia, el publisher, el presupuesto de marketing y la calidad. Además, las ventas tienen una distribución muy sesgada (pocos *superventas* y muchos juegos pequeños), lo que no se ajusta bien a una relación lineal. Los coeficientes más grandes señalan plataformas y géneros asociados a mayores ventas promedio, pero deben interpretarse con cautela. Como mejoras, se recomienda incluir el publisher, transformar la variable objetivo con logaritmo y probar modelos no lineales (por ejemplo, *random forest*).
+
+# Conclusiones generales
+
+1. **Mercado:** el mercado de videojuegos del dataset está liderado por Norteamérica, con géneros de acción, deportes y shooters en la cima, y un pico de ventas alrededor de 2008-2009.
+2. **Diferencias culturales:** las preferencias varían por región; Japón se distingue por su fuerte inclinación a los RPG y a las plataformas portátiles.
+3. **Ciclos de plataforma:** las ventas siguen los ciclos de las consolas, y las empresas deben planificar lanzamientos según la etapa del ciclo.
+4. **Concentración:** pocos publishers capturan la mayor parte de las ventas, por lo que un nuevo participante debe diferenciarse mediante nichos, alianzas y eficiencia.
+5. **Cautela con los datos:** la caída observada tras 2010 se debe en buena parte a limitaciones del dataset (distribución digital y móvil no registradas, cobertura incompleta de años recientes), por lo que no debe interpretarse como un declive real de la industria.
+6. **Calidad de datos:** la limpieza (nulos, tipos y duplicados) fue necesaria para obtener resultados confiables; las conclusiones son tan sólidas como la calidad y cobertura de los datos.
+7. **Decisiones:** el análisis descriptivo y diagnóstico es un punto de partida para decidir, pero debe complementarse con datos de costos, ingresos, ventas digitales y comportamiento del jugador antes de comprometer inversiones.
